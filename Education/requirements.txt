@@ -1,0 +1,28 @@
+# LLM & AI
+groq
+langchain
+langchain-groq
+
+# Web Scraping
+requests
+beautifulsoup4
+duckduckgo-search
+
+# Data Analysis & Visualization
+matplotlib
+wordcloud
+textblob
+pandas
+numpy
+
+# PDF Generation
+markdown
+pdfkit
+weasyprint
+
+# UI
+streamlit
+
+# Utilities
+python-dotenv
+loguru
