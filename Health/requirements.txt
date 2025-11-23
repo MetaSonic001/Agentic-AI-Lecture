@@ -3,4 +3,3 @@ crewai
 langchain-groq
 python-dotenv
 reportlab
-sqlite3

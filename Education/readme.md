@@ -1,221 +1,326 @@
-# 🔬 Multi-Agent Research Assistant
+# 🔬 Multi-Agent Research Assistant (Phidata/Agno)
 
-A simple, educational implementation of a multi-agent system that autonomously conducts research and generates reports.
+A true multi-agent research system built with **Phidata (formerly Agno)** framework for autonomous research and report generation.
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    ORCHESTRATOR                              │
-│  Coordinates the workflow between agents                     │
-└─────────────────────┬───────────────────────────────────────┘
-                      │
-        ┌─────────────┴─────────────┐
-        ▼                           ▼
-┌───────────────┐           ┌───────────────────────────────┐
-│ PLANNER AGENT │           │        WORKER AGENT           │
-│               │           │                               │
-│ • Analyzes    │           │  ┌─────────────────────────┐  │
-│   topic       │──────────▶│  │ A) Data Collector       │  │
-│ • Creates     │           │  │    - DuckDuckGo Search  │  │
-│   plan        │           │  │    - Web Scraping       │  │
-│ • Defines     │           │  └─────────────────────────┘  │
-│   tasks       │           │  ┌─────────────────────────┐  │
-└───────────────┘           │  │ B) Analyzer             │  │
-                            │  │    - Text Statistics    │  │
-                            │  │    - Sentiment Analysis │  │
-                            │  │    - Visualization      │  │
-                            │  └─────────────────────────┘  │
-                            │  ┌─────────────────────────┐  │
-                            │  │ C) Report Writer        │  │
-                            │  │    - Section Generation │  │
-                            │  │    - Markdown/HTML      │  │
-                            │  └─────────────────────────┘  │
-                            │  ┌─────────────────────────┐  │
-                            │  │ D) Self-Reviewer        │  │
-                            │  │    - Critiques Draft    │  │
-                            │  │    - Improves Content   │  │
-                            │  └─────────────────────────┘  │
-                            └───────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    PHIDATA TEAM AGENT                            │
+│              (Multi-Agent Coordinator)                           │
+└──────────────────┬──────────────────────────────────────────────┘
+                   │
+        ┏━━━━━━━━━━┻━━━━━━━━━━┓
+        ▼                      ▼
+┌──────────────┐      ┌────────────────────────────────┐
+│PLANNER AGENT │      │      WORKER AGENT              │
+│              │      │                                │
+│ Role:        │      │ Role: Execution Specialist     │
+│ Planning     │─────▶│                                │
+│ Expert       │      │ Tools:                         │
+│              │      │ ├─ search_web()                │
+│ Creates:     │      │ ├─ extract_webpage_content()   │
+│ • Research   │      │ ├─ analyze_text_statistics()   │
+│   Plan       │      │ ├─ analyze_sentiment()         │
+│ • Task List  │      │ └─ create_visualization()      │
+│ • Strategy   │      │                                │
+└──────────────┘      │ Executes:                      │
+                      │ 1. Source Collection           │
+                      │ 2. Content Extraction          │
+                      │ 3. Data Analysis               │
+                      │ 4. Report Writing              │
+                      │ 5. Self-Review                 │
+                      │ 6. Final Production            │
+                      └────────────────────────────────┘
 ```
+
+## ✨ Key Features
+
+### 🤖 True Multi-Agent System (Phidata)
+- **Team-based coordination**: Agents work together seamlessly
+- **Built-in orchestration**: No manual handoffs needed
+- **Tool-equipped agents**: Workers have specialized capabilities
+- **Autonomous execution**: Agents make decisions independently
+
+### 📚 Comprehensive Research
+- Web search via DuckDuckGo (no API key needed)
+- Content extraction from multiple sources
+- Text statistics and keyword analysis
+- Sentiment analysis
+- Auto-generated visualizations
+
+### 📊 Rich Outputs
+- Multi-section research reports
+- Statistical summaries
+- Keyword charts and word clouds
+- Sentiment analysis gauges
+- Markdown and downloadable formats
 
 ## 📁 Project Structure
 
 ```
 multi-agent-research/
 ├── app.py                 # Streamlit UI
-├── orchestrator.py        # Coordinates agents
-├── planner_agent.py       # Planning agent
-├── worker_agent.py        # Execution agent
-├── data_collector.py      # Web search & scraping
-├── analyzer.py            # Text analysis
-├── report_generator.py    # Report creation
-├── llm_client.py          # Groq API wrapper
+├── agents.py              # Phidata agent definitions
+├── orchestrator.py        # Research workflow orchestrator
+├── tools.py               # Agent tools (search, extract, analyze)
 ├── models.py              # Data models
 ├── config.py              # Configuration
-├── logger_setup.py        # Logging setup
+├── logger_setup.py        # Logging
 ├── requirements.txt       # Dependencies
 ├── .env.example           # Environment template
-└── README.md              # This file
+└── README.md              # Documentation
 ```
 
-## 🚀 Quick Start
+## 🚀 Installation & Setup
 
-### 1. Clone/Create Project
+### 1. Prerequisites
+- Python 3.9+
+- pip
 
+### 2. Clone/Create Project
 ```bash
 mkdir multi-agent-research
 cd multi-agent-research
-# Copy all the files from the artifacts
+# Copy all files from artifacts
 ```
 
-### 2. Set Up Virtual Environment
-
+### 3. Virtual Environment
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Activate:
+# Linux/Mac:
+source venv/bin/activate
+
+# Windows:
+venv\Scripts\activate
 ```
 
-### 3. Install Dependencies
-
+### 4. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Get Free API Key
-
-1. Go to [Groq Console](https://console.groq.com)
-2. Sign up for free
+### 5. Get Groq API Key (FREE)
+1. Visit [console.groq.com](https://console.groq.com)
+2. Sign up (no credit card required)
 3. Create an API key
+4. Free tier includes:
+   - 30 requests/minute
+   - 6,000 requests/day
+   - Plenty for research tasks!
 
-### 5. Configure Environment
-
+### 6. Configure Environment
 ```bash
 cp .env.example .env
-# Edit .env and add your GROQ_API_KEY
+nano .env  # or use any editor
+
+# Add your key:
+GROQ_API_KEY=gsk_your_actual_key_here
 ```
 
-### 6. Run the Application
-
+### 7. Run Application
 ```bash
 streamlit run app.py
 ```
 
-## 🎯 How It Works
+Application opens at: `http://localhost:8501`
 
-### Step 1: User Input
-Enter a research topic like "Sentiment analysis applications in social media"
+## 🎯 Usage
 
-### Step 2: Planner Agent
-- Breaks down the research into 6 tasks
-- Creates a structured plan
-- Assigns tasks to Worker Agent
+### Basic Workflow
 
-### Step 3: Worker Agent Executes
-| Phase | Action |
-|-------|--------|
-| **A) Collection** | Searches DuckDuckGo, extracts content from top 3 sources |
-| **B) Analysis** | Runs text statistics, keyword extraction, sentiment analysis |
-| **C) Writing** | Generates report sections using LLM |
-| **D) Review** | Self-critiques and improves the draft |
+1. **Enter Topic**: Type your research question in the sidebar
+   - Example: "Applications of machine learning in healthcare"
+   
+2. **Click Start**: Agents begin autonomous research
+   
+3. **Watch Progress**: Real-time status updates show agent activities
+   
+4. **Review Results**: 
+   - Research plan from Planner Agent
+   - Complete report from Worker Agent
+   - Visualizations and statistics
+   
+5. **Download**: Get your report in Markdown format
 
-### Step 4: Final Output
-- Clean research report (Markdown + HTML)
-- Statistical analysis
-- Visualizations (keyword chart, word cloud, sentiment gauge)
+### Example Topics
 
-## 📊 Features
+- "Sentiment analysis applications in social media"
+- "Recent advances in quantum computing"
+- "Climate change mitigation strategies"
+- "Blockchain technology use cases"
+- "Artificial intelligence ethics considerations"
 
-### ✅ Multi-Agent Architecture
-- **Planner Agent**: Strategic planning with LLM
-- **Worker Agent**: Autonomous task execution
+## 🛠️ How It Works
 
-### ✅ Data Collection
-- DuckDuckGo search (no API key needed)
-- BeautifulSoup web scraping
-- Smart content extraction
+### Phase 1: Planning (Planner Agent)
+```
+Input: Research Topic
+↓
+Planner Agent analyzes and creates:
+├─ Task 1: Source Identification
+├─ Task 2: Content Collection
+├─ Task 3: Data Analysis
+├─ Task 4: Report Drafting
+├─ Task 5: Self-Review
+└─ Task 6: Final Production
+```
 
-### ✅ Analysis Capabilities
-- Word count & sentence statistics
-- Keyword frequency analysis
-- Sentiment analysis with TextBlob
-- Auto-generated visualizations
-
-### ✅ Report Generation
-- Multiple sections (Summary, Introduction, Findings, Analysis, Conclusion)
-- Markdown and HTML output
-- Source citations
-
-### ✅ Self-Review Loop
-- Automatic draft improvement
-- Iterative refinement
-- Quality assurance
-
-### ✅ Clean UI/UX
-- Modern Streamlit interface
-- Real-time task progress
-- Detailed agent logs
-- Download options
+### Phase 2: Execution (Worker Agent)
+```
+Worker Agent with Tools:
+│
+├─ Task 1: search_web()
+│   └─ Find 3-5 trustworthy sources
+│
+├─ Task 2: extract_webpage_content()
+│   └─ Scrape and clean content
+│
+├─ Task 3: analyze_text_statistics() + analyze_sentiment()
+│   └─ Generate statistics and sentiment scores
+│
+├─ Task 4: LLM-powered writing
+│   └─ Draft report sections
+│
+├─ Task 5: Self-review loop
+│   └─ Critique and improve draft
+│
+└─ Task 6: create_visualization() + formatting
+    └─ Final report with charts
+```
 
 ## ⚙️ Configuration
 
-Edit `config.py` to customize:
+Edit `config.py`:
 
 ```python
 # LLM Settings
-LLM_MODEL = "llama-3.1-8b-instant"  # Fast and free
-LLM_TEMPERATURE = 0.7
-MAX_TOKENS = 4096
+LLM_MODEL = "llama-3.1-70b-versatile"  # Groq's most capable
+LLM_TEMPERATURE = 0.7                   # Creativity level
+MAX_TOKENS = 8192                       # Response length
 
 # Research Settings
-MAX_SOURCES = 3          # Number of sources to collect
-MAX_SEARCH_RESULTS = 5   # Search results to consider
+MAX_SOURCES = 3                         # Sources to collect
+MAX_SEARCH_RESULTS = 5                  # Search results to consider
 
 # Review Settings
-MAX_REVIEW_ITERATIONS = 2  # Self-review cycles
+MAX_REVIEW_ITERATIONS = 2               # Self-review cycles
 ```
 
-## 🛠️ Tech Stack
+## 🧰 Tech Stack
 
-| Component | Technology |
-|-----------|------------|
-| **LLM** | Groq (Llama 3.1 8B) |
-| **Search** | DuckDuckGo (free) |
-| **Scraping** | BeautifulSoup |
-| **Analysis** | TextBlob, NLTK |
-| **Visualization** | Matplotlib, WordCloud |
-| **UI** | Streamlit |
-| **Logging** | Loguru |
+| Component | Technology | Why |
+|-----------|-----------|-----|
+| **Multi-Agent** | Phidata (Agno) | True agent coordination |
+| **LLM** | Groq + Llama 3.1 70B | Fast, free, powerful |
+| **Search** | DuckDuckGo | No API key needed |
+| **Scraping** | BeautifulSoup4 | Reliable extraction |
+| **Analysis** | TextBlob | Sentiment analysis |
+| **Viz** | Matplotlib, WordCloud | Charts and word clouds |
+| **UI** | Streamlit | Clean, reactive interface |
+| **Logging** | Loguru | Beautiful logs |
 
-## 💡 Tips
+## 📝 Agent Instructions
 
-1. **Better Results**: Use specific, focused research topics
-2. **Source Quality**: The system prioritizes authoritative sources
-3. **Logs**: Enable detailed logs to understand agent behavior
-4. **Iteration**: Increase `MAX_REVIEW_ITERATIONS` for better quality
+### Planner Agent
+```
+Role: Research Planning Expert
+Responsibilities:
+- Analyze research topic
+- Break down into subtasks
+- Create structured 6-task plan
+- Coordinate with Worker Agent
+```
+
+### Worker Agent
+```
+Role: Research Execution Specialist
+Tools: 5 specialized functions
+Responsibilities:
+- Execute all research tasks
+- Use tools autonomously
+- Collect and analyze data
+- Write and review content
+- Produce final outputs
+```
 
 ## 🐛 Troubleshooting
 
 ### "GROQ_API_KEY not found"
-- Ensure `.env` file exists with your API key
-- Restart the application after editing `.env`
+```bash
+# Check .env file exists
+ls -la .env
+
+# Verify contents
+cat .env
+
+# Should show:
+# GROQ_API_KEY=gsk_...
+
+# Restart app after changes
+```
 
 ### "Search failed"
 - Check internet connection
-- DuckDuckGo may rate-limit; wait and retry
+- DuckDuckGo may rate-limit; wait 30 seconds and retry
+- Try a different search query
 
-### "Content extraction failed"
-- Some sites block scraping
-- The system falls back to search snippets
+### "Agent not responding"
+- Check Groq API status: [status.groq.com](https://status.groq.com)
+- Verify API key is valid
+- Check rate limits (30 req/min on free tier)
 
-## 📝 License
+### Charts not generating
+```bash
+# Install matplotlib dependencies (Linux)
+sudo apt-get install python3-tk
 
-MIT License - Feel free to use and modify!
+# Verify matplotlib backend
+python -c "import matplotlib; print(matplotlib.get_backend())"
+# Should show 'Agg'
+```
+
+## 🎓 Educational Value
+
+This project demonstrates:
+- ✅ Multi-agent coordination (Phidata/Agno)
+- ✅ Tool-equipped agents
+- ✅ Autonomous task execution
+- ✅ LLM integration (Groq)
+- ✅ Web scraping best practices
+- ✅ Text analysis techniques
+- ✅ Data visualization
+- ✅ Clean code architecture
+- ✅ Comprehensive logging
+- ✅ Modern UI/UX (Streamlit)
+
+## 🔮 Future Enhancements
+
+Possible additions:
+- [ ] Add fact-checking agent
+- [ ] Implement RAG for better context
+- [ ] Add PDF export
+- [ ] Include citation management
+- [ ] Multi-language support
+- [ ] Collaborative editing agent
+- [ ] Research history and caching
+
+## 📄 License
+
+MIT License - Free to use and modify!
 
 ## 🤝 Contributing
 
-This is an educational project. Feel free to:
-- Add more agents (Fact-checker, Editor, etc.)
-- Implement RAG for better context
-- Add more output formats
-- Improve the UI
+This is an educational project. Feel free to fork and extend!
+
+## 📚 Resources
+
+- [Phidata Documentation](https://docs.phidata.com)
+- [Groq Documentation](https://console.groq.com/docs)
+- [Streamlit Documentation](https://docs.streamlit.io)
+
+---
+
+**Built with ❤️ using Phidata Multi-Agent Framework**

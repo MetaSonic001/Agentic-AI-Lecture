@@ -1,9 +1,10 @@
-# LLM & AI
-groq
-langchain
-langchain-groq
+# Multi-Agent Framework
+phidata
 
-# Web Scraping
+# LLM
+groq
+
+# Web Scraping & Search
 requests
 beautifulsoup4
 duckduckgo-search
@@ -15,10 +16,9 @@ textblob
 pandas
 numpy
 
-# PDF Generation
+# PDF & Report Generation
 markdown
-pdfkit
-weasyprint
+fpdf
 
 # UI
 streamlit
