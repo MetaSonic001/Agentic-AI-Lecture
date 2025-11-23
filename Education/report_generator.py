@@ -27,21 +27,47 @@ class ReportGenerator:
         md.append(f"# {report.title}\n")
         md.append(f"**Topic:** {report.topic}\n")
         md.append(f"**Generated:** {report.created_at.strftime('%Y-%m-%d %H:%M')}\n")
+        # Authors (gathered from sources if available)
+        authors = []
+        for s in report.sources:
+            if getattr(s, 'author', None):
+                authors.append(s.author)
+        authors = [a for a in dict.fromkeys(authors) if a]
+        if authors:
+            md.append(f"**Authors:** {', '.join(authors)}\n")
         md.append("---\n")
         
         # Table of Contents
         md.append("## Table of Contents\n")
-        md.append("1. [Executive Summary](#executive-summary)")
-        md.append("2. [Introduction](#introduction)")
-        md.append("3. [Key Findings](#key-findings)")
-        md.append("4. [Analysis](#analysis)")
-        md.append("5. [Conclusion](#conclusion)")
-        md.append("6. [Sources](#sources)\n")
+        toc_items = []
+        idx = 1
+        for section_name in report.sections.keys():
+            anchor = section_name.lower().replace(' ', '-')
+            toc_items.append(f"{idx}. [{section_name}](#{anchor})")
+            idx += 1
+        toc_items.append(f"{idx}. [Sources](#sources)")
+        md.extend(toc_items)
+        md.append("")
         md.append("---\n")
         
+        # Contributors
+        if getattr(report, 'contributors', None):
+            md.append("## Contributors\n")
+            for c in report.contributors:
+                md.append(f"- {c}")
+            md.append("")
+
         # Sections
         for section_name, content in report.sections.items():
+            # Replace generic [Author] placeholder with first available author
+            if '[Author]' in content:
+                replacement = authors[0] if authors else 'Unknown'
+                content = content.replace('[Author]', replacement)
             md.append(f"## {section_name}\n")
+            # Attribution
+            author = report.section_authors.get(section_name) if getattr(report, 'section_authors', None) else None
+            if author:
+                md.append(f"*Written by: {author}*\n")
             md.append(f"{content}\n")
         
         # Analysis Results
@@ -64,10 +90,22 @@ class ReportGenerator:
                     chart_name = Path(path).stem.replace("_", " ").title()
                     md.append(f"![{chart_name}]({path})\n")
         
-        # Sources
+        # Sources (detailed table)
         md.append("## Sources\n")
-        for i, source in enumerate(report.sources, 1):
-            md.append(f"{i}. [{source.title}]({source.url})")
+        if report.sources:
+            md.append('| # | Title | Authors | Publisher / Journal | Published | DOI | URL | Raw Path |')
+            md.append('|---|-------|---------|---------------------|----------:|-----|-----|----------|')
+            for i, source in enumerate(report.sources, 1):
+                title = source.title or ''
+                authors = getattr(source, 'author', '') or ''
+                publisher = getattr(source, 'publisher', '') or ''
+                pubdate = getattr(source, 'publish_date', '') or ''
+                doi = getattr(source, 'doi', '') or ''
+                url = source.url or ''
+                rawp = getattr(source, 'raw_path', '') or ''
+                md.append(f"| {i} | {title} | {authors} | {publisher} | {pubdate} | {doi} | {url} | {rawp} |")
+        else:
+            md.append('No sources were collected.')
         md.append("")
         
         # Footer

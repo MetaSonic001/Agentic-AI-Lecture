@@ -185,11 +185,16 @@ Write the {section} section:"""
             content = self.llm.generate(prompt, system_prompt, temperature=0.7)
             sections[section] = content.strip()
         
-        # Create report object
+        # Create report object and record contributors
+        contributors = ["Planner Agent", "Worker Agent"]
+        section_authors = {name: "Worker Agent" for name in sections.keys()}
+
         self.report = ResearchReport(
             title=f"Research Report: {topic}",
             topic=topic,
             sections=sections,
+            contributors=contributors,
+            section_authors=section_authors,
             sources=self.sources,
             analysis=self.analysis
         )

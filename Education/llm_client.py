@@ -11,6 +11,24 @@ from config import MAX_SEARCH_RESULTS, REQUEST_TIMEOUT
 from logger_setup import log
 
 
+def get_llm_client():
+    """Return a simple local LLM client shim for offline/testing runs.
+
+    The returned object implements `generate(prompt, system_prompt=None, temperature=0.7)`
+    and returns a deterministic dummy string. Production runs should replace
+    this with a real Groq/Agno client.
+    """
+    class _LocalLLM:
+        def generate(self, prompt, system_prompt=None, temperature=0.7):
+            try:
+                text = prompt if isinstance(prompt, str) else str(prompt)
+                return f"DUMMY_CONTENT for prompt: {text[:240]}"
+            except Exception:
+                return "DUMMY_CONTENT"
+
+    return _LocalLLM()
+
+
 def search_web(query: str, max_results: int = MAX_SEARCH_RESULTS) -> str:
     """
     Search the web using DuckDuckGo.
@@ -61,32 +79,80 @@ def extract_webpage_content(url: str) -> str:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
-        
+
         response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
-        
+
         soup = BeautifulSoup(response.text, "html.parser")
-        
+
+        # Extract metadata: title, author, publisher, publish date, doi
+        title = None
+        if soup.title and soup.title.string:
+            title = soup.title.string.strip()
+
+        # meta tags
+        def _meta(name):
+            tag = soup.find('meta', attrs={'name': name}) or soup.find('meta', attrs={'property': name})
+            if tag:
+                return tag.get('content') or tag.get('value')
+            return None
+
+        author = _meta('author') or _meta('article:author') or _meta('og:article:author')
+        publisher = _meta('publisher') or _meta('og:site_name')
+        publish_date = _meta('article:published_time') or _meta('pubdate') or _meta('date')
+        doi = None
+        # attempt to find DOI in meta or text
+        doi_tag = _meta('citation_doi') or _meta('dc.identifier')
+        if doi_tag:
+            doi = doi_tag
+
         # Remove unwanted elements
         for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
             tag.decompose()
-        
+
         # Extract main content
         main = soup.find("main") or soup.find("article") or soup.find("body")
-        
+
         if main:
             text = main.get_text(separator=" ", strip=True)
             # Limit content length
-            content = text[:5000]
-            log.info(f"Extracted {len(content)} characters")
-            return content
+            content = text[:50000]
         else:
-            log.warning("Could not find main content")
-            return ""
-            
+            log.warning("Could not find main content; falling back to whole page")
+            content = soup.get_text(separator=" ", strip=True)[:50000]
+
+        # Save raw content to disk for provenance
+        from pathlib import Path
+        from config import OUTPUT_DIR
+        raw_dir = Path(OUTPUT_DIR) / 'raw'
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        # create a safe filename from url
+        import hashlib
+        h = hashlib.sha1(url.encode('utf-8')).hexdigest()[:10]
+        raw_path = raw_dir / f"{h}.txt"
+        try:
+            raw_path.write_text(content, encoding='utf-8')
+        except Exception:
+            pass
+
+        metadata = {
+            'url': url,
+            'title': title or '',
+            'author': author or None,
+            'publisher': publisher or None,
+            'publish_date': publish_date or None,
+            'doi': doi or None,
+            'content': content,
+            'raw_path': str(raw_path)
+        }
+
+        log.info(f"Extracted content from {url} ({len(content)} chars)")
+        return json.dumps(metadata)
+
     except Exception as e:
         log.error(f"Content extraction failed: {str(e)}")
-        return ""
+        # return minimal metadata with empty content
+        return json.dumps({'url': url, 'title': '', 'author': None, 'publisher': None, 'publish_date': None, 'doi': None, 'content': '', 'raw_path': None})
 
 
 def analyze_text_statistics(text: str) -> str:
@@ -101,36 +167,60 @@ def analyze_text_statistics(text: str) -> str:
     """
     import re
     from collections import Counter
-    
-    log.info("Analyzing text statistics")
-    
-    # Basic stats
-    words = re.findall(r'\b\w+\b', text.lower())
-    sentences = re.split(r'[.!?]+', text)
-    sentences = [s.strip() for s in sentences if s.strip()]
-    
-    # Stopwords
-    stopwords = {
-        "the", "a", "an", "is", "are", "was", "were", "be", "been",
-        "being", "have", "has", "had", "do", "does", "did", "will",
-        "would", "could", "should", "to", "of", "in", "for", "on",
-        "with", "at", "by", "from", "and", "but", "or", "if"
-    }
-    
-    # Keywords
-    filtered_words = [w for w in words if w not in stopwords and len(w) > 3]
-    keyword_counts = Counter(filtered_words)
-    top_keywords = dict(keyword_counts.most_common(15))
-    
-    stats = {
-        "word_count": len(words),
-        "sentence_count": len(sentences),
-        "avg_sentence_length": round(len(words) / max(len(sentences), 1), 1),
-        "top_keywords": top_keywords
-    }
-    
-    log.info(f"Analysis complete: {stats['word_count']} words")
-    return json.dumps(stats)
+
+    try:
+        log.info("Analyzing text statistics")
+
+        # If text is a JSON payload (string), try to extract 'content'
+        if isinstance(text, str):
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, dict) and 'content' in parsed:
+                    text = parsed.get('content', '')
+            except Exception:
+                # not JSON, continue
+                pass
+
+        if not isinstance(text, str):
+            text = str(text)
+
+        # Truncate extremely long inputs to keep processing predictable
+        MAX_CHARS = 20000
+        if len(text) > MAX_CHARS:
+            text = text[:MAX_CHARS]
+
+        # Basic stats
+        words = re.findall(r'\b\w+\b', text.lower())
+        sentences = re.split(r'[.!?]+', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+
+        # Stopwords
+        stopwords = {
+            "the", "a", "an", "is", "are", "was", "were", "be", "been",
+            "being", "have", "has", "had", "do", "does", "did", "will",
+            "would", "could", "should", "to", "of", "in", "for", "on",
+            "with", "at", "by", "from", "and", "but", "or", "if"
+        }
+
+        # Keywords
+        filtered_words = [w for w in words if w not in stopwords and len(w) > 3]
+        keyword_counts = Counter(filtered_words)
+        top_keywords = dict(keyword_counts.most_common(15))
+
+        stats = {
+            "word_count": len(words),
+            "sentence_count": len(sentences),
+            "avg_sentence_length": round(len(words) / max(len(sentences), 1), 1),
+            "top_keywords": top_keywords
+        }
+
+        log.info(f"Analysis complete: {stats['word_count']} words")
+        return json.dumps(stats)
+
+    except Exception as e:
+        log.error(f"analyze_text_statistics failed: {e}")
+        # Always return a JSON string to keep the tool contract consistent
+        return json.dumps({"error": str(e), "word_count": 0, "sentence_count": 0, "top_keywords": {}})
 
 
 def analyze_sentiment(text: str) -> str:

@@ -9,6 +9,7 @@ from typing import List
 from models import Source
 from config import MAX_SEARCH_RESULTS, REQUEST_TIMEOUT
 from logger_setup import log
+from datetime import datetime
 
 
 class DataCollector:
@@ -63,6 +64,20 @@ class DataCollector:
             for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
                 tag.decompose()
             
+            # Extract metadata
+            def _meta(name):
+                tag = soup.find('meta', attrs={'name': name}) or soup.find('meta', attrs={'property': name})
+                if tag:
+                    return tag.get('content') or tag.get('value')
+                return None
+
+            source.author = _meta('author') or _meta('article:author') or _meta('og:article:author')
+            source.publisher = _meta('publisher') or _meta('og:site_name')
+            source.publish_date = _meta('article:published_time') or _meta('pubdate') or _meta('date')
+            doi_tag = _meta('citation_doi') or _meta('dc.identifier')
+            if doi_tag:
+                source.doi = doi_tag
+
             # Extract main content
             main = soup.find("main") or soup.find("article") or soup.find("body")
             
@@ -70,11 +85,26 @@ class DataCollector:
                 # Get text and clean it
                 text = main.get_text(separator=" ", strip=True)
                 # Limit content length
-                source.content = text[:5000]
+                source.content = text[:50000]
+                source.accessed_at = datetime.now()
+                # Save raw content for provenance
+                from pathlib import Path
+                from config import OUTPUT_DIR
+                raw_dir = Path(OUTPUT_DIR) / 'raw'
+                raw_dir.mkdir(parents=True, exist_ok=True)
+                import hashlib
+                h = hashlib.sha1(source.url.encode('utf-8')).hexdigest()[:10]
+                raw_path = raw_dir / f"{h}.txt"
+                try:
+                    raw_path.write_text(source.content, encoding='utf-8')
+                    source.raw_path = str(raw_path)
+                except Exception:
+                    source.raw_path = None
                 log.debug(f"Extracted {len(source.content)} chars from {source.url}")
             else:
                 source.content = source.snippet
                 log.warning(f"Could not find main content, using snippet")
+                source.accessed_at = datetime.now()
                 
         except requests.RequestException as e:
             log.error(f"Failed to fetch {source.url}: {str(e)}")

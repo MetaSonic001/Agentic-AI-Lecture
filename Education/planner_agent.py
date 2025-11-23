@@ -21,12 +21,33 @@ import json
 # and return a JSON string as content (avoids Groq 'content missing' errors).
 def _safe_search_web(*args, **kwargs):
     try:
-        # Accept either positional or kw arg 'query'
-        query = kwargs.get('query') if 'query' in kwargs else (args[0] if args else "")
-        # normalize stray escape characters
+        # Accept either positional or kw arg 'query'. Support cases where the
+        # model passes a dict or a JSON-string containing the args.
+        query = None
+        if 'query' in kwargs:
+            query = kwargs.get('query')
+        elif args:
+            query = args[0]
+
+        # If query comes as a dict (function-call style), extract possible fields
+        if isinstance(query, dict):
+            # Commonly the model may include 'query' key inside
+            query = query.get('query') or query.get('q') or ''
+
+        # If the model passed a JSON string, try to parse
         if isinstance(query, str):
-            query = query.strip()
-            query = query.replace('\\"', '"')
+            s = query.strip()
+            # remove wrapping quotes if present
+            if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+                s = s[1:-1]
+            # unescape common escaped quotes
+            s = s.replace('\\"', '"').replace("\\'", "'")
+            query = s
+
+        # Fallback empty query
+        if not query:
+            query = ''
+
         result = search_web(query)
         content = result if isinstance(result, str) else json.dumps(result)
         return content
@@ -37,14 +58,33 @@ def _safe_search_web(*args, **kwargs):
 
 def _safe_extract_webpage_content(*args, **kwargs):
     try:
-        url = kwargs.get('url') if 'url' in kwargs else (args[0] if args else "")
-        # normalize URL strings that may include stray escaping
+        # Accept url either as kwarg or first positional arg
+        url = None
+        if 'url' in kwargs:
+            url = kwargs.get('url')
+        elif args:
+            url = args[0]
+
+        # If the model passed a dict, extract url key
+        if isinstance(url, dict):
+            url = url.get('url') or url.get('href') or url.get('link') or ''
+
+        # If url is JSON string, sanitize
         if isinstance(url, str):
-            url = url.strip()
-            # remove stray trailing backslashes before closing quotes or end
-            url = url.replace('\\"', '"')
-            if url.endswith('\\'):
-                url = url[:-1]
+            s = url.strip()
+            # remove wrapping quotes
+            if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+                s = s[1:-1]
+            # unescape
+            s = s.replace('\\"', '"').replace("\\'", "'")
+            # remove stray trailing backslashes
+            while s.endswith('\\'):
+                s = s[:-1]
+            url = s
+
+        if not url:
+            url = ''
+
         result = extract_webpage_content(url)
         content = result if isinstance(result, str) else json.dumps(result)
         return content
@@ -58,6 +98,20 @@ def _safe_analyze_text_statistics(*args, **kwargs):
         text = kwargs.get('text') if 'text' in kwargs else (args[0] if args else "")
         if isinstance(text, str):
             text = text.strip()
+            # If the text is a JSON blob from extract_webpage_content, extract the 'content' field
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, dict) and 'content' in parsed:
+                    text = parsed.get('content', '')
+            except Exception:
+                pass
+        # Enforce a maximum length to avoid function-call failures on very large payloads
+        try:
+            MAX_CHARS = 20000
+            if isinstance(text, str) and len(text) > MAX_CHARS:
+                text = text[:MAX_CHARS]
+        except Exception:
+            pass
         result = analyze_text_statistics(text)
         content = result if isinstance(result, str) else json.dumps(result)
         return content
@@ -71,6 +125,19 @@ def _safe_analyze_sentiment(*args, **kwargs):
         text = kwargs.get('text') if 'text' in kwargs else (args[0] if args else "")
         if isinstance(text, str):
             text = text.strip()
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, dict) and 'content' in parsed:
+                    text = parsed.get('content', '')
+            except Exception:
+                pass
+        # Truncate very long text
+        try:
+            MAX_CHARS_SENT = 10000
+            if isinstance(text, str) and len(text) > MAX_CHARS_SENT:
+                text = text[:MAX_CHARS_SENT]
+        except Exception:
+            pass
         result = analyze_sentiment(text)
         content = result if isinstance(result, str) else json.dumps(result)
         return content
@@ -92,6 +159,24 @@ def _safe_create_visualization(*args, **kwargs):
         # Normalize inputs
         if isinstance(topic_arg, str):
             topic_arg = topic_arg.strip()
+
+        # If analysis_results was passed as a JSON string, try to parse keywords and sentiment
+        try:
+            if isinstance(keywords_arg, str):
+                parsed = json.loads(keywords_arg)
+                # support either top_keywords or keyword list
+                if isinstance(parsed, dict) and 'top_keywords' in parsed:
+                    keywords_arg = parsed.get('top_keywords')
+        except Exception:
+            pass
+
+        try:
+            if isinstance(sentiment_arg, str):
+                parsed_s = json.loads(sentiment_arg)
+                if isinstance(parsed_s, dict) and 'score' in parsed_s:
+                    sentiment_arg = parsed_s
+        except Exception:
+            pass
 
         result = create_visualization(keywords_arg or {}, sentiment_arg or {}, topic_arg or "")
         content = result if isinstance(result, str) else json.dumps(result)

@@ -38,6 +38,12 @@ class Source:
     title: str
     snippet: str
     content: str = ""
+    author: Optional[str] = None
+    publisher: Optional[str] = None
+    publish_date: Optional[str] = None
+    doi: Optional[str] = None
+    accessed_at: Optional[datetime] = None
+    raw_path: Optional[str] = None
     relevance_score: float = 0.0
 
 
@@ -67,6 +73,10 @@ class ResearchReport:
     title: str
     topic: str
     sections: Dict[str, str] = field(default_factory=dict)
+    # Contributors: list of agent names (e.g., Planner Agent, Worker Agent)
+    contributors: List[str] = field(default_factory=list)
+    # Map from section name -> contributor (agent that wrote/edited it)
+    section_authors: Dict[str, str] = field(default_factory=dict)
     sources: List[Source] = field(default_factory=list)
     analysis: Optional[AnalysisResult] = None
     markdown_content: str = ""

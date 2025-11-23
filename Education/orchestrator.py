@@ -10,10 +10,17 @@ import sys
 # Ensure the `Education` folder is on sys.path so top-level imports inside
 # `planner_agent.py` (e.g., `import config`) resolve to local modules.
 sys.path.insert(0, os.path.dirname(__file__))
+# Also ensure project root is on sys.path so sibling folders like `scripts/`
+# can be imported (scripts.md_to_pdf). This makes PDF generation importable.
+project_root = os.path.dirname(os.path.dirname(__file__))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 from planner_agent import create_team_agent, create_planner_agent, create_worker_agent
 from logger_setup import log
 from config import OUTPUT_DIR
 import requests
+from worker_agent import WorkerAgent
+from models import ResearchPlan, Task
 
 # Quick instrumentation: wrap requests.Session.request to log outgoing JSON POSTs
 # so we can inspect payloads sent to model APIs when debugging missing `content`.
@@ -627,7 +634,7 @@ class ResearchOrchestrator:
         if self.status_callback:
             self.status_callback(status)
     
-    def run_research(self, topic: str) -> Dict[str, Any]:
+    def run_research(self, topic: str, stream: bool = False) -> Dict[str, Any]:
         """
         Execute the complete research workflow.
         
@@ -640,6 +647,26 @@ class ResearchOrchestrator:
         self.current_topic = topic
         log.info(f"Starting research on: {topic}")
         
+        def _on_task_update(task_obj):
+            # Called by WorkerAgent.execute_plan after each task completes.
+            try:
+                self._update_status('TASK_PROGRESS', f"Completed task {task_obj.id}: {task_obj.name}")
+                # If there's a partial report available, save it so UI can show progress
+                try:
+                    if hasattr(self, 'worker_instance') and getattr(self.worker_instance, 'report', None):
+                        rpt = self.worker_instance.report
+                        # Save incremental markdown and HTML preview
+                        gen = self.worker_instance.generator
+                        try:
+                            gen.save_markdown(rpt)
+                            gen.save_html(rpt)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
         try:
             # Phase 1: Planning
             self._update_status(
@@ -700,16 +727,36 @@ Execute each task in sequence:
 Provide detailed updates as you complete each task.
 """
             
-            # Get worker agent for execution
-            worker = create_worker_agent()
-            try:
-                execution_response = worker.run(execution_prompt)
-                self.final_report = execution_response.content
-            except Exception as e:
-                # If the worker call fails, log and re-raise to surface the error
-                # instead of returning a fallback report.
-                log.error(f"Worker LLM call failed: {e}")
-                raise
+            # Execution: either run Agno worker agent (batch) or local WorkerAgent (streaming)
+            if stream:
+                # Use local WorkerAgent to run tasks sequentially and emit partial reports
+                self.worker_instance = WorkerAgent()
+                # Build a simple ResearchPlan object with six tasks if the planner returned text
+                rp = ResearchPlan(topic=topic)
+                rp.tasks = [
+                    Task(id=1, name='Source Identification', description='Find sources'),
+                    Task(id=2, name='Content Collection', description='Extract content'),
+                    Task(id=3, name='Data Analysis', description='Analyze content'),
+                    Task(id=4, name='Report Drafting', description='Draft report'),
+                    Task(id=5, name='Self-Review', description='Review and improve'),
+                    Task(id=6, name='Final Production', description='Produce outputs')
+                ]
+                try:
+                    self.worker_instance.execute_plan(rp, task_callback=_on_task_update)
+                    # After run, the worker_instance.report should be available
+                    self.final_report = self.worker_instance.report.markdown_content if getattr(self.worker_instance, 'report', None) else ''
+                except Exception as e:
+                    log.error(f"Local Worker execution failed: {e}")
+                    raise
+            else:
+                # Get worker agent for execution (batch)
+                worker = create_worker_agent()
+                try:
+                    execution_response = worker.run(execution_prompt)
+                    self.final_report = execution_response.content
+                except Exception as e:
+                    log.error(f"Worker LLM call failed: {e}")
+                    raise
             
             self._update_status(
                 "EXECUTION_COMPLETE",
@@ -763,14 +810,50 @@ Provide detailed updates as you complete each task.
         Returns:
             Path to saved file
         """
+        # Save as PDF using the markdown->PDF helper if the content appears to be markdown
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{OUTPUT_DIR}/research_report_{timestamp}.md"
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write(report_content)
-        
-        log.info(f"Report saved: {filename}")
-        return filename
+        md_filename = f"{OUTPUT_DIR}/research_report_{timestamp}.md"
+        pdf_filename = f"{OUTPUT_DIR}/research_report_{timestamp}.pdf"
+
+        try:
+            with open(md_filename, 'w', encoding='utf-8') as f:
+                f.write(report_content)
+
+            # Try to generate a rich PDF from the markdown
+            try:
+                # First try normal import
+                try:
+                    from scripts.md_to_pdf import build_pdf
+                except Exception:
+                    # Fallback: load module by file path (works when scripts/ isn't a package)
+                    import importlib.util
+                    spec_path = os.path.join(project_root, 'scripts', 'md_to_pdf.py')
+                    if os.path.exists(spec_path):
+                        spec = importlib.util.spec_from_file_location('md_to_pdf', spec_path)
+                        md_mod = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(md_mod)
+                        build_pdf = getattr(md_mod, 'build_pdf')
+                    else:
+                        raise
+
+                out_pdf = build_pdf(md_filename, out_pdf_path=pdf_filename)
+                log.info(f"Report saved as PDF: {out_pdf}")
+                return out_pdf
+            except Exception as e:
+                # Log the full exception and fall back to the markdown file so
+                # callers still get an artifact to inspect.
+                log.exception(f"PDF generation failed; falling back to markdown file: {e}")
+                return md_filename
+        except Exception as e:
+            log.error(f"Failed to save report: {e}")
+            # As a last resort, write directly to a .txt file
+            fallback = f"{OUTPUT_DIR}/research_report_{timestamp}.txt"
+            try:
+                with open(fallback, 'w', encoding='utf-8') as f:
+                    f.write(report_content)
+                return fallback
+            except Exception:
+                return md_filename
     
     def get_status(self) -> Dict[str, Any]:
         """Get current status."""
