@@ -10,7 +10,7 @@ load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # LLM Settings (for Phidata agents)
-LLM_MODEL = "llama-3.1-70b-versatile"  # Groq's best model
+LLM_MODEL = "llama-3.1-8b-instant"  # Groq's best model
 LLM_TEMPERATURE = 0.7
 MAX_TOKENS = 8192
 

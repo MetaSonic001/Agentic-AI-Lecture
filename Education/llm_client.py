@@ -6,11 +6,12 @@ import requests
 from bs4 import BeautifulSoup
 from duckduckgo_search import DDGS
 from typing import List, Dict
+import json
 from config import MAX_SEARCH_RESULTS, REQUEST_TIMEOUT
 from logger_setup import log
 
 
-def search_web(query: str, max_results: int = MAX_SEARCH_RESULTS) -> List[Dict]:
+def search_web(query: str, max_results: int = MAX_SEARCH_RESULTS) -> str:
     """
     Search the web using DuckDuckGo.
     
@@ -36,7 +37,8 @@ def search_web(query: str, max_results: int = MAX_SEARCH_RESULTS) -> List[Dict]:
             })
             
         log.info(f"Found {len(results)} search results")
-        return results
+        # Return JSON string so agent tool messages have a `content` string
+        return json.dumps(results)
         
     except Exception as e:
         log.error(f"Search failed: {str(e)}")
@@ -87,7 +89,7 @@ def extract_webpage_content(url: str) -> str:
         return ""
 
 
-def analyze_text_statistics(text: str) -> Dict:
+def analyze_text_statistics(text: str) -> str:
     """
     Analyze basic text statistics.
     
@@ -128,10 +130,10 @@ def analyze_text_statistics(text: str) -> Dict:
     }
     
     log.info(f"Analysis complete: {stats['word_count']} words")
-    return stats
+    return json.dumps(stats)
 
 
-def analyze_sentiment(text: str) -> Dict:
+def analyze_sentiment(text: str) -> str:
     """
     Analyze sentiment of text.
     
@@ -163,14 +165,14 @@ def analyze_sentiment(text: str) -> Dict:
         }
         
         log.info(f"Sentiment: {label} ({score:.2f})")
-        return result
+        return json.dumps(result)
         
     except Exception as e:
         log.error(f"Sentiment analysis failed: {str(e)}")
         return {"score": 0.0, "label": "neutral"}
 
 
-def create_visualization(keywords: Dict[str, int], sentiment: Dict, topic: str) -> List[str]:
+def create_visualization(keywords: Dict[str, int], sentiment: Dict, topic: str) -> str:
     """
     Create visualization charts.
     
@@ -270,4 +272,5 @@ def create_visualization(keywords: Dict[str, int], sentiment: Dict, topic: str) 
     except Exception as e:
         log.error(f"Sentiment chart failed: {e}")
     
-    return chart_paths
+    # Return JSON string of generated chart file paths
+    return json.dumps(chart_paths)

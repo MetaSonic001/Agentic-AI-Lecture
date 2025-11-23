@@ -5,9 +5,575 @@ Agno (formerly Phidata) provides lightweight multi-agent orchestration.
 from typing import Callable, Dict, Any
 from datetime import datetime
 from pathlib import Path
-from agents import create_team_agent, create_planner_agent, create_worker_agent
+import os
+import sys
+# Ensure the `Education` folder is on sys.path so top-level imports inside
+# `planner_agent.py` (e.g., `import config`) resolve to local modules.
+sys.path.insert(0, os.path.dirname(__file__))
+from planner_agent import create_team_agent, create_planner_agent, create_worker_agent
 from logger_setup import log
 from config import OUTPUT_DIR
+import requests
+
+# Quick instrumentation: wrap requests.Session.request to log outgoing JSON POSTs
+# so we can inspect payloads sent to model APIs when debugging missing `content`.
+_orig_request = requests.Session.request
+
+def _logging_request(self, method, url, *args, **kwargs):
+    # Only intercept POST JSON payloads and attempt to sanitize tool messages
+    try:
+        if method and method.upper() == 'POST':
+            headers = kwargs.get('headers') or {}
+            data = kwargs.get('data')
+            json_payload = kwargs.get('json')
+
+            # Determine payload dict
+            payload = None
+            if json_payload is not None:
+                payload = json_payload
+            else:
+                # try parse data as JSON string
+                try:
+                    import json as _json
+                    if isinstance(data, (bytes, str)):
+                        payload = _json.loads(data)
+                except Exception:
+                    payload = None
+
+            sanitized = False
+            # Recursively search for any 'messages' lists in the payload and sanitize
+            def _sanitize_recursive(obj):
+                nonlocal sanitized
+                try:
+                    if isinstance(obj, dict):
+                        # direct messages list
+                        if 'messages' in obj and isinstance(obj['messages'], list):
+                            for msg in obj['messages']:
+                                if isinstance(msg, dict) and msg.get('role') == 'tool':
+                                    if ('content' not in msg) or (msg.get('content') is None):
+                                        args_obj = msg.get('arguments') or msg.get('args') or msg.get('tool_call_result') or None
+                                        try:
+                                            import json as _json2
+                                            msg['content'] = _json2.dumps(args_obj) if args_obj is not None else ''
+                                        except Exception:
+                                            msg['content'] = str(args_obj) if args_obj is not None else ''
+                            sanitized = True
+
+                        # continue traversing
+                        for v in obj.values():
+                            _sanitize_recursive(v)
+                    elif isinstance(obj, list):
+                        for item in obj:
+                            _sanitize_recursive(item)
+                except Exception:
+                    return
+
+            if isinstance(payload, (dict, list)):
+                _sanitize_recursive(payload)
+                if sanitized:
+                    kwargs['json'] = payload
+
+            # Log sanitized payload or original json for debugging
+            try:
+                log_msg = f"REQUEST -> {url}\njson={payload if sanitized else json_payload}\ndata={data}\n"
+                with open(os.path.join(os.path.dirname(__file__), 'groq_requests.log'), 'a', encoding='utf-8') as f:
+                    f.write(datetime.now().isoformat() + ' ' + log_msg + '\n')
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return _orig_request(self, method, url, *args, **kwargs)
+
+requests.Session.request = _logging_request
+
+# Final-send sanitizers: wrap httpx sync/async request methods if httpx is present.
+# Some Groq client implementations use httpx; intercepting httpx.request
+# guarantees we sanitize the final payload immediately before the network send.
+try:
+    import httpx as _httpx
+
+    if not getattr(_httpx, '_grai_sanitizer_wrapped', False):
+        _orig_httpx_client_request = getattr(_httpx.Client, 'request', None)
+        _orig_httpx_async_request = getattr(_httpx.AsyncClient, 'request', None)
+
+        def _httpx_sanitize_request(self, method, url, *args, **kwargs):
+            try:
+                # Helper: recursive sanitizer that mutates dict/list in-place
+                def _sanitize_recursive(obj):
+                    try:
+                        if isinstance(obj, dict):
+                            if 'messages' in obj and isinstance(obj['messages'], list):
+                                for msg in obj['messages']:
+                                    if isinstance(msg, dict) and msg.get('role') == 'tool':
+                                        if ('content' not in msg) or (msg.get('content') is None):
+                                            args_obj = msg.get('arguments') or msg.get('args') or msg.get('tool_call_result') or None
+                                            try:
+                                                import json as _json2
+                                                msg['content'] = _json2.dumps(args_obj) if args_obj is not None else ''
+                                            except Exception:
+                                                msg['content'] = str(args_obj) if args_obj is not None else ''
+                            for v in list(obj.values()):
+                                _sanitize_recursive(v)
+                        elif isinstance(obj, list):
+                            for item in obj:
+                                _sanitize_recursive(item)
+                    except Exception:
+                        return
+
+                # Try json= first
+                if 'json' in kwargs and isinstance(kwargs['json'], (dict, list)):
+                    _sanitize_recursive(kwargs['json'])
+
+                # If data/content present, try to decode JSON, sanitize, and re-encode as needed
+                for key in ('content', 'data'):
+                    if key in kwargs and isinstance(kwargs[key], (bytes, str)):
+                        try:
+                            import json as _json
+                            raw = kwargs[key]
+                            if isinstance(raw, (bytes, bytearray)):
+                                raw_decoded = raw.decode('utf-8')
+                            else:
+                                raw_decoded = raw
+                            parsed = _json.loads(raw_decoded)
+                            _sanitize_recursive(parsed)
+                            new_payload = _json.dumps(parsed)
+                            # Preserve original type
+                            if isinstance(raw, (bytes, bytearray)):
+                                kwargs[key] = new_payload.encode('utf-8')
+                            else:
+                                kwargs[key] = new_payload
+                        except Exception:
+                            # not JSON or decode failed; skip
+                            pass
+
+                # If data is a dict (httpx may accept), sanitize in-place
+                if 'data' in kwargs and isinstance(kwargs['data'], (dict, list)):
+                    _sanitize_recursive(kwargs['data'])
+
+                # If content is a dict (unlikely) sanitize
+                if 'content' in kwargs and isinstance(kwargs['content'], (dict, list)):
+                    _sanitize_recursive(kwargs['content'])
+            except Exception:
+                pass
+            return _orig_httpx_client_request(self, method, url, *args, **kwargs)
+
+        async def _httpx_async_sanitize_request(self, method, url, *args, **kwargs):
+            try:
+                def _sanitize_recursive(obj):
+                    try:
+                        if isinstance(obj, dict):
+                            if 'messages' in obj and isinstance(obj['messages'], list):
+                                for msg in obj['messages']:
+                                    if isinstance(msg, dict) and msg.get('role') == 'tool':
+                                        if ('content' not in msg) or (msg.get('content') is None):
+                                            args_obj = msg.get('arguments') or msg.get('args') or msg.get('tool_call_result') or None
+                                            try:
+                                                import json as _json2
+                                                msg['content'] = _json2.dumps(args_obj) if args_obj is not None else ''
+                                            except Exception:
+                                                msg['content'] = str(args_obj) if args_obj is not None else ''
+                            for v in list(obj.values()):
+                                _sanitize_recursive(v)
+                        elif isinstance(obj, list):
+                            for item in obj:
+                                _sanitize_recursive(item)
+                    except Exception:
+                        return
+
+                if 'json' in kwargs and isinstance(kwargs['json'], (dict, list)):
+                    _sanitize_recursive(kwargs['json'])
+
+                for key in ('content', 'data'):
+                    if key in kwargs and isinstance(kwargs[key], (bytes, str)):
+                        try:
+                            import json as _json
+                            raw = kwargs[key]
+                            if isinstance(raw, (bytes, bytearray)):
+                                raw_decoded = raw.decode('utf-8')
+                            else:
+                                raw_decoded = raw
+                            parsed = _json.loads(raw_decoded)
+                            _sanitize_recursive(parsed)
+                            new_payload = _json.dumps(parsed)
+                            if isinstance(raw, (bytes, bytearray)):
+                                kwargs[key] = new_payload.encode('utf-8')
+                            else:
+                                kwargs[key] = new_payload
+                        except Exception:
+                            pass
+
+                if 'data' in kwargs and isinstance(kwargs['data'], (dict, list)):
+                    _sanitize_recursive(kwargs['data'])
+
+                if 'content' in kwargs and isinstance(kwargs['content'], (dict, list)):
+                    _sanitize_recursive(kwargs['content'])
+            except Exception:
+                pass
+            return await _orig_httpx_async_request(self, method, url, *args, **kwargs)
+
+        if _orig_httpx_client_request is not None:
+            _httpx.Client.request = _httpx_sanitize_request
+        if _orig_httpx_async_request is not None:
+            _httpx.AsyncClient.request = _httpx_async_sanitize_request
+
+        setattr(_httpx, '_grai_sanitizer_wrapped', True)
+        log.info('Applied httpx request sanitizer')
+except Exception:
+    # httpx not installed or wrapping failed; continue silently
+    pass
+
+# As a final defense, attempt to wrap a Groq client's low-level client/http_client
+try:
+    import agno.models.groq as _gm
+    # Try to wrap attributes on the Groq class that may hold the low-level client
+    for attr_name in ('client', 'http_client'):
+        client_attr = getattr(_gm.Groq, attr_name, None)
+        if client_attr is None:
+            client_attr = getattr(_gm, attr_name, None)
+        if client_attr is None:
+            continue
+        # if an instance-level client exists, we can't replace the class attr reliably here,
+        # but wrapping the common httpx/requests clients above will cover most cases.
+        try:
+            orig_req = getattr(client_attr, 'request', None)
+            if orig_req and not getattr(orig_req, '_grai_wrapped', False):
+                def _client_req_wrapper(self, method, url, *args, **kwargs):
+                    try:
+                        payload = kwargs.get('json')
+                        if payload is None:
+                            data = kwargs.get('data') or kwargs.get('content')
+                            try:
+                                import json as _json
+                                if isinstance(data, (bytes, str)):
+                                    payload = _json.loads(data)
+                            except Exception:
+                                payload = None
+
+                        def _sanitize_recursive(obj):
+                            try:
+                                if isinstance(obj, dict):
+                                    if 'messages' in obj and isinstance(obj['messages'], list):
+                                        for msg in obj['messages']:
+                                            if isinstance(msg, dict) and msg.get('role') == 'tool':
+                                                if ('content' not in msg) or (msg.get('content') is None):
+                                                    args_obj = msg.get('arguments') or msg.get('args') or msg.get('tool_call_result') or None
+                                                    try:
+                                                        import json as _json2
+                                                        msg['content'] = _json2.dumps(args_obj) if args_obj is not None else ''
+                                                    except Exception:
+                                                        msg['content'] = str(args_obj) if args_obj is not None else ''
+                                    for v in obj.values():
+                                        _sanitize_recursive(v)
+                                elif isinstance(obj, list):
+                                    for item in obj:
+                                        _sanitize_recursive(item)
+                            except Exception:
+                                return
+
+                        if isinstance(payload, (dict, list)):
+                            _sanitize_recursive(payload)
+                            kwargs['json'] = payload
+                    except Exception:
+                        pass
+                    return orig_req(self, method, url, *args, **kwargs)
+
+                _client_req_wrapper._grai_wrapped = True
+                try:
+                    setattr(client_attr, 'request', _client_req_wrapper)
+                    log.info(f'Wrapped Groq client attr {attr_name} request')
+                except Exception:
+                    pass
+        except Exception:
+            pass
+except Exception:
+    pass
+
+
+# Guaranteed final-layer monkeypatch for Groq SDK APIClient.request
+try:
+    import groq
+    import inspect
+    import json as _json
+
+    _orig_api_request = getattr(groq._client.APIClient, 'request', None)
+
+    if _orig_api_request is not None and not getattr(_orig_api_request, '_grai_wrapped', False):
+        if inspect.iscoroutinefunction(_orig_api_request):
+            async def _patched_api_request(self, method, url, **kwargs):
+                try:
+                    # log before sanitization for debugging
+                    try:
+                        with open(os.path.join(os.path.dirname(__file__), 'groq_requests.log'), 'a', encoding='utf-8') as f:
+                            f.write(datetime.now().isoformat() + ' FINAL OUTBOUND BEFORE SANITIZE:\n')
+                            f.write(_json.dumps(kwargs, default=str, indent=2) + '\n')
+                    except Exception:
+                        pass
+
+
+                    # sanitize kwargs in-place
+                    _sanitize_payload_in_kwargs(kwargs)
+
+                    # Some SDK code clones request_options before sending; ensure any clones
+                    # would also be sanitized by applying sanitization to a shallow copy
+                    try:
+                        clone = kwargs.copy()
+                        _sanitize_payload_in_kwargs(clone)
+                        kwargs.update(clone)
+                    except Exception:
+                        pass
+
+                    # log after sanitize
+                    try:
+                        with open(os.path.join(os.path.dirname(__file__), 'groq_requests.log'), 'a', encoding='utf-8') as f:
+                            f.write(datetime.now().isoformat() + ' FINAL OUTBOUND AFTER SANITIZE:\n')
+                            f.write(_json.dumps(kwargs, default=str, indent=2) + '\n')
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                return await _orig_api_request(self, method, url, **kwargs)
+
+            _patched_api_request._grai_wrapped = True
+            setattr(groq._client.APIClient, 'request', _patched_api_request)
+            log.info('Patched groq._client.APIClient.request (async) with final sanitizer')
+        else:
+            def _patched_api_request(self, method, url, **kwargs):
+                try:
+                    # log before sanitization for debugging
+                    try:
+                        with open(os.path.join(os.path.dirname(__file__), 'groq_requests.log'), 'a', encoding='utf-8') as f:
+                            f.write(datetime.now().isoformat() + ' FINAL OUTBOUND BEFORE SANITIZE:\n')
+                            f.write(_json.dumps(kwargs, default=str, indent=2) + '\n')
+                    except Exception:
+                        pass
+
+                    # sanitize kwargs in-place
+                    _sanitize_payload_in_kwargs(kwargs)
+
+                    # Also sanitize and merge a shallow clone to defend against SDK copies
+                    try:
+                        clone = kwargs.copy()
+                        _sanitize_payload_in_kwargs(clone)
+                        kwargs.update(clone)
+                    except Exception:
+                        pass
+
+                    # log after sanitize
+                    try:
+                        with open(os.path.join(os.path.dirname(__file__), 'groq_requests.log'), 'a', encoding='utf-8') as f:
+                            f.write(datetime.now().isoformat() + ' FINAL OUTBOUND AFTER SANITIZE:\n')
+                            f.write(_json.dumps(kwargs, default=str, indent=2) + '\n')
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                return _orig_api_request(self, method, url, **kwargs)
+
+            _patched_api_request._grai_wrapped = True
+            setattr(groq._client.APIClient, 'request', _patched_api_request)
+            log.info('Patched groq._client.APIClient.request (sync) with final sanitizer')
+except Exception as _e:
+    try:
+        log.warning(f'Could not patch groq APIClient.request: {_e}')
+    except Exception:
+        pass
+
+
+# Final monkeypatch: wrap Groq SDK internal request entrypoints so we sanitize
+# the exact kwargs the SDK will send to the network (httpcore or custom clients).
+def _sanitize_payload_in_kwargs(kwargs: dict):
+    """Mutate kwargs in-place: sanitize any nested 'messages' lists found in
+    `json`, `data`, or `content` entries. Handles bytes/str content decoding.
+    """
+    try:
+        def _sanitize_recursive(obj):
+            try:
+                if isinstance(obj, dict):
+                    if 'messages' in obj and isinstance(obj['messages'], list):
+                        for msg in obj['messages']:
+                            if isinstance(msg, dict) and msg.get('role') == 'tool':
+                                if ('content' not in msg) or (msg.get('content') is None):
+                                    args_obj = msg.get('arguments') or msg.get('args') or msg.get('tool_call_result') or None
+                                    try:
+                                        import json as _json2
+                                        msg['content'] = _json2.dumps(args_obj) if args_obj is not None else ''
+                                    except Exception:
+                                        msg['content'] = str(args_obj) if args_obj is not None else ''
+                    for v in list(obj.values()):
+                        _sanitize_recursive(v)
+                elif isinstance(obj, list):
+                    for item in obj:
+                        _sanitize_recursive(item)
+            except Exception:
+                return
+
+        # sanitize json if present
+        if 'json' in kwargs and isinstance(kwargs['json'], (dict, list)):
+            _sanitize_recursive(kwargs['json'])
+
+        # sanitize top-level messages when provided directly
+        if 'messages' in kwargs and isinstance(kwargs['messages'], list):
+            _sanitize_recursive({'messages': kwargs['messages']})
+
+        # sanitize request_params if present (some SDK versions nest payloads here)
+        if 'request_params' in kwargs and isinstance(kwargs['request_params'], dict):
+            # request_params may itself contain json/data/content/messages
+            # sanitize nested dict in-place
+            _sanitize_recursive(kwargs['request_params'])
+
+        # sanitize body/data/content if bytes/str by attempting JSON decode
+        for key in ('body', 'content', 'data'):
+            if key in kwargs and isinstance(kwargs[key], (bytes, str)):
+                try:
+                    import json as _json
+                    raw = kwargs[key]
+                    if isinstance(raw, (bytes, bytearray)):
+                        raw_decoded = raw.decode('utf-8')
+                    else:
+                        raw_decoded = raw
+                    parsed = _json.loads(raw_decoded)
+                    _sanitize_recursive(parsed)
+                    new_payload = _json.dumps(parsed)
+                    if isinstance(raw, (bytes, bytearray)):
+                        kwargs[key] = new_payload.encode('utf-8')
+                    else:
+                        kwargs[key] = new_payload
+                except Exception:
+                    # not JSON or decode failed; skip
+                    pass
+
+        # sanitize data/content/body if they are dict/list directly
+        for key in ('data', 'content', 'body'):
+            if key in kwargs and isinstance(kwargs[key], (dict, list)):
+                _sanitize_recursive(kwargs[key])
+    except Exception:
+        return
+
+
+def _wrap_target_callable(target, attr_name):
+    """Wrap target.attr_name with a sanitizer that mutates kwargs in-place.
+    Supports sync and async callables.
+    Returns True if wrapped, False otherwise.
+    """
+    try:
+        orig = getattr(target, attr_name, None)
+        if orig is None:
+            return False
+
+        # avoid double-wrap
+        if getattr(orig, '_grai_sanitizer_wrapped', False):
+            return True
+
+        import inspect
+
+        if inspect.iscoroutinefunction(orig):
+            async def _wrapped(*args, **kwargs):
+                try:
+                    _sanitize_payload_in_kwargs(kwargs)
+                except Exception:
+                    pass
+                return await orig(*args, **kwargs)
+
+            _wrapped._grai_sanitizer_wrapped = True
+            setattr(target, attr_name, _wrapped)
+            return True
+        else:
+            def _wrapped(*args, **kwargs):
+                try:
+                    _sanitize_payload_in_kwargs(kwargs)
+                except Exception:
+                    pass
+                return orig(*args, **kwargs)
+
+            _wrapped._grai_sanitizer_wrapped = True
+            setattr(target, attr_name, _wrapped)
+            return True
+    except Exception:
+        return False
+
+
+try:
+    # Candidate targets inside Groq SDK to wrap. Try multiple possible locations
+    # depending on SDK version.
+    import importlib
+
+    candidates = [
+        ('groq._client', 'APIClient', 'request'),
+        ('groq._client', 'APIClient', '_request'),
+        ('groq._client', 'Client', '_request'),
+        ('groq.resources.chat.completions', 'Completions', 'create'),
+    ]
+
+    for mod_path, cls_name, method_name in candidates:
+        try:
+            mod = importlib.import_module(mod_path)
+            cls = getattr(mod, cls_name, None)
+            if cls is None:
+                continue
+            wrapped = _wrap_target_callable(cls, method_name)
+            if wrapped:
+                log.info(f'Wrapped Groq SDK target: {mod_path}.{cls_name}.{method_name}')
+        except Exception:
+            continue
+except Exception:
+    pass
+
+
+# Wrap streaming consumers if present so chunked/stream sub-requests are sanitized
+try:
+    import importlib
+    mod = importlib.import_module('groq._client')
+    APIClient = getattr(mod, 'APIClient', None)
+    if APIClient is not None:
+        # common internal stream consumer names
+        for stream_name in ('_consume_sync_stream', '_consume_async_stream'):
+            orig = getattr(APIClient, stream_name, None)
+            if orig and not getattr(orig, '_grai_wrapped', False):
+                import inspect
+                if inspect.iscoroutinefunction(orig):
+                    async def _wrapped_consumer(self, *args, **kwargs):
+                        try:
+                            # sanitize any request_options or kwargs passed in
+                            if args and isinstance(args[0], dict):
+                                _sanitize_payload_in_kwargs(args[0])
+                            if isinstance(kwargs, dict):
+                                _sanitize_payload_in_kwargs(kwargs)
+                            # Also sanitize shallow clones if SDK copies them
+                            try:
+                                if isinstance(kwargs, dict) and hasattr(kwargs, 'copy'):
+                                    c = kwargs.copy()
+                                    _sanitize_payload_in_kwargs(c)
+                                    kwargs.update(c)
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
+                        return await orig(self, *args, **kwargs)
+                    _wrapped_consumer._grai_wrapped = True
+                    setattr(APIClient, stream_name, _wrapped_consumer)
+                else:
+                    def _wrapped_consumer(self, *args, **kwargs):
+                        try:
+                            if args and isinstance(args[0], dict):
+                                _sanitize_payload_in_kwargs(args[0])
+                            if isinstance(kwargs, dict):
+                                _sanitize_payload_in_kwargs(kwargs)
+                            try:
+                                if isinstance(kwargs, dict) and hasattr(kwargs, 'copy'):
+                                    c = kwargs.copy()
+                                    _sanitize_payload_in_kwargs(c)
+                                    kwargs.update(c)
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
+                        return orig(self, *args, **kwargs)
+                    _wrapped_consumer._grai_wrapped = True
+                    setattr(APIClient, stream_name, _wrapped_consumer)
+        log.info('Wrapped Groq APIClient stream consumers for sanitizer')
+except Exception:
+    pass
 
 
 class ResearchOrchestrator:
@@ -92,9 +658,15 @@ Break it down into 6 specific tasks with clear objectives for each task.
             
             # Get planner agent separately for planning phase
             planner = create_planner_agent()
-            plan_response = planner.run(plan_prompt)
-            
-            self.research_plan = plan_response.content
+            try:
+                plan_response = planner.run(plan_prompt)
+                self.research_plan = plan_response.content
+            except Exception as e:
+                # If the planner call fails, log and re-raise so the workflow
+                # does not continue with a fallback plan. The outer exception
+                # handler will convert this into an error result.
+                log.error(f"Planner LLM call failed: {e}")
+                raise
             
             self._update_status(
                 "PLAN_CREATED",
@@ -130,9 +702,14 @@ Provide detailed updates as you complete each task.
             
             # Get worker agent for execution
             worker = create_worker_agent()
-            execution_response = worker.run(execution_prompt)
-            
-            self.final_report = execution_response.content
+            try:
+                execution_response = worker.run(execution_prompt)
+                self.final_report = execution_response.content
+            except Exception as e:
+                # If the worker call fails, log and re-raise to surface the error
+                # instead of returning a fallback report.
+                log.error(f"Worker LLM call failed: {e}")
+                raise
             
             self._update_status(
                 "EXECUTION_COMPLETE",

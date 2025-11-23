@@ -6,6 +6,12 @@ import streamlit as st
 from datetime import datetime
 from pathlib import Path
 import time
+import os
+import sys
+
+# Ensure the Education package folder is discoverable for local imports
+# when this file is run via `streamlit run` from various working directories.
+sys.path.insert(0, os.path.dirname(__file__))
 
 # Page config
 st.set_page_config(

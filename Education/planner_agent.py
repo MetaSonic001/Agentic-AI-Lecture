@@ -14,6 +14,92 @@ from tools import (
     create_visualization
 )
 from logger_setup import log
+import json
+
+
+# --- Tool wrappers: ensure agent tool calls always accept null/missing args
+# and return a JSON string as content (avoids Groq 'content missing' errors).
+def _safe_search_web(*args, **kwargs):
+    try:
+        # Accept either positional or kw arg 'query'
+        query = kwargs.get('query') if 'query' in kwargs else (args[0] if args else "")
+        # normalize stray escape characters
+        if isinstance(query, str):
+            query = query.strip()
+            query = query.replace('\\"', '"')
+        result = search_web(query)
+        content = result if isinstance(result, str) else json.dumps(result)
+        return content
+    except Exception as e:
+        log.error(f"search_web tool error: {e}")
+        return json.dumps({"error": str(e)})
+
+
+def _safe_extract_webpage_content(*args, **kwargs):
+    try:
+        url = kwargs.get('url') if 'url' in kwargs else (args[0] if args else "")
+        # normalize URL strings that may include stray escaping
+        if isinstance(url, str):
+            url = url.strip()
+            # remove stray trailing backslashes before closing quotes or end
+            url = url.replace('\\"', '"')
+            if url.endswith('\\'):
+                url = url[:-1]
+        result = extract_webpage_content(url)
+        content = result if isinstance(result, str) else json.dumps(result)
+        return content
+    except Exception as e:
+        log.error(f"extract_webpage_content tool error: {e}")
+        return json.dumps({"error": str(e)})
+
+
+def _safe_analyze_text_statistics(*args, **kwargs):
+    try:
+        text = kwargs.get('text') if 'text' in kwargs else (args[0] if args else "")
+        if isinstance(text, str):
+            text = text.strip()
+        result = analyze_text_statistics(text)
+        content = result if isinstance(result, str) else json.dumps(result)
+        return content
+    except Exception as e:
+        log.error(f"analyze_text_statistics tool error: {e}")
+        return json.dumps({"error": str(e)})
+
+
+def _safe_analyze_sentiment(*args, **kwargs):
+    try:
+        text = kwargs.get('text') if 'text' in kwargs else (args[0] if args else "")
+        if isinstance(text, str):
+            text = text.strip()
+        result = analyze_sentiment(text)
+        content = result if isinstance(result, str) else json.dumps(result)
+        return content
+    except Exception as e:
+        log.error(f"analyze_sentiment tool error: {e}")
+        return json.dumps({"error": str(e)})
+
+
+def _safe_create_visualization(*args, **kwargs):
+    try:
+        # Accept keywords or positional args: (keywords, sentiment, topic)
+        if args and len(args) >= 3:
+            keywords_arg, sentiment_arg, topic_arg = args[0], args[1], args[2]
+        else:
+            keywords_arg = kwargs.get('keywords')
+            sentiment_arg = kwargs.get('sentiment')
+            topic_arg = kwargs.get('topic', '')
+
+        # Normalize inputs
+        if isinstance(topic_arg, str):
+            topic_arg = topic_arg.strip()
+
+        result = create_visualization(keywords_arg or {}, sentiment_arg or {}, topic_arg or "")
+        content = result if isinstance(result, str) else json.dumps(result)
+        return content
+    except Exception as e:
+        log.error(f"create_visualization tool error: {e}")
+        return json.dumps({"error": str(e)})
+
 
 
 # Initialize the LLM
@@ -56,10 +142,7 @@ def create_planner_agent() -> Agent:
             "4. For each task, provide clear, actionable descriptions",
             "5. Present the plan in a structured format",
             "6. Be specific about what needs to be accomplished in each task"
-        ],
-        markdown=True,
-        show_tool_calls=True,
-        add_datetime_to_instructions=True
+        ]
     )
     
     log.info("Planner Agent created")
@@ -84,27 +167,68 @@ def create_worker_agent() -> Agent:
         Function(
             name="search_web",
             description="Search the web using DuckDuckGo to find relevant sources",
-            function=search_web
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "trustworthiness": {"type": "string"},
+                    "source_filter": {"type": "string"}
+                },
+                "required": ["query"]
+            },
+            function=_safe_search_web
         ),
         Function(
             name="extract_webpage_content",
             description="Extract text content from a webpage URL",
-            function=extract_webpage_content
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "format": "uri"},
+                    "trustworthiness": {"type": "string"}
+                },
+                "required": ["url"]
+            },
+            function=_safe_extract_webpage_content
         ),
         Function(
             name="analyze_text_statistics",
             description="Analyze text statistics including word count, keywords, etc.",
-            function=analyze_text_statistics
+            parameters={
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "analysis_type": {"type": "string", "enum": ["statistics", "sentiment"]}
+                },
+                "required": ["text"]
+            },
+            function=_safe_analyze_text_statistics
         ),
         Function(
             name="analyze_sentiment",
             description="Analyze the sentiment of text",
-            function=analyze_sentiment
+            parameters={
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "analysis_type": {"type": "string", "enum": ["sentiment"]}
+                },
+                "required": ["text"]
+            },
+            function=_safe_analyze_sentiment
         ),
         Function(
             name="create_visualization",
             description="Create visualization charts from analysis results",
-            function=create_visualization
+            parameters={
+                "type": "object",
+                "properties": {
+                    "analysis_results": {"type": "string"},
+                    "visualization_type": {"type": "string", "enum": ["chart", "wordcloud"]}
+                },
+                "required": ["analysis_results", "visualization_type"]
+            },
+            function=_safe_create_visualization
         )
     ]
     
@@ -162,11 +286,7 @@ def create_worker_agent() -> Agent:
             "Execute each task thoroughly before moving to the next.",
             "Provide clear status updates as you work."
         ],
-        tools=tools,
-        markdown=True,
-        show_tool_calls=True,
-        add_datetime_to_instructions=True,
-        prevent_hallucinations=True
+        tools=tools
     )
     
     log.info("Worker Agent created with tools")
@@ -183,9 +303,9 @@ def create_team_agent() -> Agent:
     planner = create_planner_agent()
     worker = create_worker_agent()
     
+    # Construct the coordinator agent without passing an unsupported `team` kwarg.
     team = Agent(
         name="Research Team Coordinator",
-        team=[planner, worker],
         model=llm,
         description=(
             "You coordinate a research team consisting of a Planner Agent and a Worker Agent. "
@@ -202,10 +322,11 @@ def create_team_agent() -> Agent:
             "",
             "Coordinate effectively between agents.",
             "Provide clear status updates at each phase."
-        ],
-        markdown=True,
-        show_tool_calls=True
+        ]
     )
+
+    # Attach the planner and worker as attributes so callers can access them if needed.
+    setattr(team, "team_members", [planner, worker])
     
     log.info("Team Agent created with Planner and Worker")
     return team

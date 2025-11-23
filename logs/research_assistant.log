@@ -1,0 +1,19 @@
+2025-11-23 13:58:37 | INFO     | llm_client:search_web:25 - Searching web for: test
+2025-11-23 13:58:38 | INFO     | llm_client:search_web:39 - Found 5 search results
+2025-11-23 13:58:38 | INFO     | llm_client:analyze_text_statistics:105 - Analyzing text statistics
+2025-11-23 13:58:38 | INFO     | llm_client:analyze_text_statistics:132 - Analysis complete: 4 words
+2025-11-23 14:01:50 | INFO     | orchestrator:__init__:62 - Initializing multi-agent system...
+2025-11-23 14:01:50 | INFO     | planner_agent:create_planner_agent:129 - Planner Agent created
+2025-11-23 14:01:50 | INFO     | planner_agent:create_worker_agent:232 - Worker Agent created with tools
+2025-11-23 14:01:50 | INFO     | planner_agent:create_team_agent:271 - Team Agent created with Planner and Worker
+2025-11-23 14:01:50 | INFO     | orchestrator:__init__:71 - Research Orchestrator initialized
+2025-11-23 14:01:50 | INFO     | orchestrator:run_research:105 - Starting research on: test topic for smoke run
+2025-11-23 14:01:50 | INFO     | orchestrator:_update_status:89 - [PLANNING] Analyzing topic and creating research plan...
+2025-11-23 14:01:50 | INFO     | planner_agent:create_planner_agent:129 - Planner Agent created
+2025-11-23 14:01:50 | INFO     | orchestrator:_update_status:89 - [PLAN_CREATED] Research plan created successfully
+2025-11-23 14:01:50 | INFO     | orchestrator:_update_status:89 - [EXECUTION_START] Worker Agent beginning task execution...
+2025-11-23 14:01:50 | INFO     | planner_agent:create_worker_agent:232 - Worker Agent created with tools
+2025-11-23 14:01:50 | INFO     | orchestrator:_update_status:89 - [EXECUTION_COMPLETE] All tasks completed successfully!
+2025-11-23 14:01:50 | INFO     | orchestrator:_save_report:225 - Report saved: outputs/research_report_20251123_140150.md
+2025-11-23 14:01:50 | INFO     | orchestrator:_update_status:89 - [REPORT_SAVED] Report saved to outputs/research_report_20251123_140150.md
+2025-11-23 14:01:50 | INFO     | orchestrator:run_research:191 - Research workflow completed successfully

@@ -197,7 +197,7 @@ Edit `config.py`:
 
 ```python
 # LLM Settings
-LLM_MODEL = "llama-3.1-70b-versatile"  # Groq's most capable
+LLM_MODEL = "llama-3.1-8b-instant"  # Groq's most capable
 LLM_TEMPERATURE = 0.7                   # Creativity level
 MAX_TOKENS = 8192                       # Response length
 
