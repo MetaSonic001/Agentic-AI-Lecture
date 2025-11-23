@@ -1,10 +1,17 @@
 # Environment variables
 .env
+Education/.env
+*.env
+.env
 
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
 *.so
 .Python
 env/
@@ -50,3 +57,7 @@ Thumbs.db
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Ensure outputs/raw and charts are not accidentally committed
+outputs/
+outputs/*
