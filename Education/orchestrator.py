@@ -1,5 +1,6 @@
 """
-Research Orchestrator using Phidata Multi-Agent System.
+Research Orchestrator using Agno Multi-Agent System.
+Agno (formerly Phidata) provides lightweight multi-agent orchestration.
 """
 from typing import Callable, Dict, Any
 from datetime import datetime

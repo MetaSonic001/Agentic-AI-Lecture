@@ -1,12 +1,12 @@
-# 🔬 Multi-Agent Research Assistant (Phidata/Agno)
+# 🔬 Multi-Agent Research Assistant (Agno)
 
-A true multi-agent research system built with **Phidata (formerly Agno)** framework for autonomous research and report generation.
+A true multi-agent research system built with **Agno (formerly Phidata)** framework for autonomous research and report generation.
 
 ## 🏗️ Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    PHIDATA TEAM AGENT                            │
+│                    AGNO TEAM AGENT                               │
 │              (Multi-Agent Coordinator)                           │
 └──────────────────┬──────────────────────────────────────────────┘
                    │
@@ -36,7 +36,7 @@ A true multi-agent research system built with **Phidata (formerly Agno)** framew
 
 ## ✨ Key Features
 
-### 🤖 True Multi-Agent System (Phidata)
+### 🤖 True Multi-Agent System (Agno)
 - **Team-based coordination**: Agents work together seamlessly
 - **Built-in orchestration**: No manual handoffs needed
 - **Tool-equipped agents**: Workers have specialized capabilities
@@ -61,7 +61,7 @@ A true multi-agent research system built with **Phidata (formerly Agno)** framew
 ```
 multi-agent-research/
 ├── app.py                 # Streamlit UI
-├── agents.py              # Phidata agent definitions
+├── agents.py              # Agno agent definitions
 ├── orchestrator.py        # Research workflow orchestrator
 ├── tools.py               # Agent tools (search, extract, analyze)
 ├── models.py              # Data models
@@ -213,7 +213,7 @@ MAX_REVIEW_ITERATIONS = 2               # Self-review cycles
 
 | Component | Technology | Why |
 |-----------|-----------|-----|
-| **Multi-Agent** | Phidata (Agno) | True agent coordination |
+| **Multi-Agent** | Agno (formerly Phidata) | True agent coordination |
 | **LLM** | Groq + Llama 3.1 70B | Fast, free, powerful |
 | **Search** | DuckDuckGo | No API key needed |
 | **Scraping** | BeautifulSoup4 | Reliable extraction |
@@ -285,7 +285,7 @@ python -c "import matplotlib; print(matplotlib.get_backend())"
 ## 🎓 Educational Value
 
 This project demonstrates:
-- ✅ Multi-agent coordination (Phidata/Agno)
+- ✅ Multi-agent coordination (Agno)
 - ✅ Tool-equipped agents
 - ✅ Autonomous task execution
 - ✅ LLM integration (Groq)
@@ -317,10 +317,11 @@ This is an educational project. Feel free to fork and extend!
 
 ## 📚 Resources
 
-- [Phidata Documentation](https://docs.phidata.com)
+- [Agno Documentation](https://docs.agno.com)
+- [Agno GitHub](https://github.com/agno-agi/agno)
 - [Groq Documentation](https://console.groq.com/docs)
 - [Streamlit Documentation](https://docs.streamlit.io)
 
 ---
 
-**Built with ❤️ using Phidata Multi-Agent Framework**
+**Built with ❤️ using Agno Multi-Agent Framework**

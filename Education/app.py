@@ -1,5 +1,6 @@
 """
-Streamlit UI for Multi-Agent Research Assistant using Phidata/Agno.
+Streamlit UI for Multi-Agent Research Assistant using Agno.
+Agno (formerly Phidata) - Lightweight multi-agent framework.
 """
 import streamlit as st
 from datetime import datetime
@@ -8,7 +9,7 @@ import time
 
 # Page config
 st.set_page_config(
-    page_title="Multi-Agent Research Assistant (Phidata)",
+    page_title="Multi-Agent Research Assistant (Agno)",
     page_icon="🔬",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -96,7 +97,7 @@ def render_header():
     
     with col1:
         st.markdown("# 🔬 Multi-Agent Research Assistant")
-        st.markdown("*Powered by **Phidata (Agno)** Multi-Agent Framework*")
+        st.markdown("*Powered by **Agno** Multi-Agent Framework*")
     
     with col2:
         st.markdown("### System Status")
@@ -152,7 +153,7 @@ def render_sidebar():
         # Framework info
         st.markdown("### 📚 Framework")
         st.info("""
-**Phidata (Agno)**
+**Agno** (formerly Phidata)
 - True multi-agent orchestration
 - Tool-equipped agents
 - Autonomous execution
@@ -330,7 +331,7 @@ def main():
             st.markdown("""
             ## 👋 Welcome to Multi-Agent Research Assistant
             
-            This system uses **Phidata (formerly Agno)** for true multi-agent orchestration.
+            This system uses **Agno (formerly Phidata)** for true multi-agent orchestration.
             
             ### 🤖 Meet the Agents
             

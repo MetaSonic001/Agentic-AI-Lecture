@@ -1,10 +1,10 @@
 """
-Phidata Agent Definitions for Multi-Agent Research System.
-Uses Agno (Phidata) framework for proper multi-agent orchestration.
+Agno Agent Definitions for Multi-Agent Research System.
+Uses Agno (formerly Phidata) framework for proper multi-agent orchestration.
 """
-from phi.agent import Agent
-from phi.model.groq import Groq
-from phi.tools.function import Function
+from agno.agent import Agent
+from agno.models.groq import Groq
+from agno.tools.function import Function
 from config import GROQ_API_KEY, LLM_MODEL, LLM_TEMPERATURE
 from tools import (
     search_web,

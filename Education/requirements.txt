@@ -1,7 +1,7 @@
-# Multi-Agent Framework
-phidata
+# Multi-Agent Framework (Agno - formerly Phidata)
+agno
 
-# LLM
+# LLM Provider Support
 groq
 
 # Web Scraping & Search
